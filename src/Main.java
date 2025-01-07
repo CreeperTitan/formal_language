@@ -1,4 +1,6 @@
 import java.util.*;
+import java.io.FileWriter;
+import java.io.IOException;
 
 //字符串处理
 class InToPost {
@@ -202,7 +204,6 @@ class DFA {
     Set<Integer> endStates;  // DFA 的终态集
     Set<Character> terminator; // DFA 的终结符集（仅包括 '0' 和 '1'）
     int[][] trans;  // DFA 的转移矩阵
-
 }
 class NFAToDFA {
 
@@ -211,10 +212,8 @@ class NFAToDFA {
     static DFAState[] dfaStates = new DFAState[100];
     static int dfaStateNumber = 0;
 
-
     /**
      * 计算一个状态集的 ε-closure
-     *
      * @param states 状态集
      * @return ε-closure 的结果集
      */
@@ -245,7 +244,6 @@ class NFAToDFA {
 
     /**
      * 计算一个状态集的 move(char) 的 ε-closure
-     *
      * @param states 状态集
      * @param ch     转移字符
      * @return move(char) 的 ε-closure
@@ -269,7 +267,6 @@ class NFAToDFA {
 
     /**
      * 判断一个状态集是否为终态
-     *
      * @param nfa    给定的 NFA
      * @param states 状态集
      * @return 是否为终态
@@ -365,6 +362,201 @@ class NFAToDFA {
         return d;
     }
 }
+
+class MinDfa {
+    static int DFAStateNumber = 0; // 状态数
+    static DFAState[] DFAStates = new DFAState[100]; // 所有DFA状态
+    static int StateNumber = 0; // 划分后的状态集合数
+    static Set<Integer>[] s = new Set[100]; // 存储每个划分的状态集
+
+    // 最小化 DFA
+    public static DFA minDFA(DFA d) {
+        DFA minDfa = new DFA();
+        minDfa.terminator = d.terminator; // 将dfa的终结符集赋给minDfa
+
+        // 初始化minDfa的转移矩阵
+        for (int i = 0; i < 100; i++) {
+            Arrays.fill(minDfa.trans[i], -1);
+        }
+
+        // 第一次划分：将终态与非终态分开
+        boolean endFlag = true;
+        for (int i = 0; i < DFAStateNumber; i++) {
+            if (!DFAStates[i].endBeing) {
+                endFlag = false;
+                StateNumber = 2;
+                if (s[1] == null) s[1] = new HashSet<>();
+                s[1].add(DFAStates[i].index);
+            } else {
+                if (s[0] == null) s[0] = new HashSet<>();
+                s[0].add(DFAStates[i].index);
+            }
+        }
+
+        if (endFlag) {
+            StateNumber = 1;
+        }
+
+        boolean cutFlag = true;
+        while (cutFlag) {
+            int cutCount = 0;
+            for (int i = 0; i < StateNumber; i++) {
+                for (char terminator : d.terminator) {
+                    int setNum = 0;
+                    Set<Integer>[] temp = new Set[20]; // 临时缓冲区
+                    for (int state : s[i]) {
+                        boolean epFlag = true;
+                        for (int j = 0; j < DFAStates[state].edgeNumber; j++) {
+                            if (DFAStates[state].edges.get(j).input == terminator) {
+                                epFlag = false;
+
+                                // 找到状态转换的状态集
+                                int transNum = findSetNum(StateNumber, DFAStates[state].edges.get(j).trans);
+                                int curSetNum = 0;
+                                while (temp[curSetNum] != null && temp[curSetNum].contains(transNum) && curSetNum < setNum) {
+                                    curSetNum++;
+                                }
+
+                                if (curSetNum == setNum) {
+                                    if (temp[setNum] == null) temp[setNum] = new HashSet<>();
+                                    temp[setNum].add(transNum);
+                                    setNum++;
+                                } else {
+                                    temp[curSetNum].add(transNum);
+                                }
+                            }
+                        }
+
+                        if (epFlag) {
+                            int curSetNum = 0;
+                            while (curSetNum < setNum && temp[curSetNum] != null && !temp[curSetNum].contains(-1)) {
+                                curSetNum++;
+                            }
+
+                            if (curSetNum == setNum) {
+                                if (temp[setNum] == null) temp[setNum] = new HashSet<>();
+                                temp[setNum].add(-1);
+                                setNum++;
+                            } else {
+                                temp[curSetNum].add(-1);
+                            }
+                        }
+                    }
+
+                    if (setNum > 1) {
+                        cutCount++;
+                        for (int j = 1; j < setNum; j++) {
+                            if (temp[j] != null) {
+                                for (int state : temp[j]) {
+                                    s[i].remove(state);
+                                    if (s[StateNumber] == null) s[StateNumber] = new HashSet<>();
+                                    s[StateNumber].add(state);
+                                }
+                                StateNumber++;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (cutCount == 0) {
+                cutFlag = false;
+            }
+        }
+
+        // 更新最小化后的 DFA
+        for (int i = 0; i < StateNumber; i++) {
+            if (s[i] != null) {
+                for (int state : s[i]) {
+                    if (state == d.startState) {
+                        minDfa.startState = i;
+                    }
+
+                    if (d.endStates.contains(state)) {
+                        DFAStates[i].endBeing = true;
+                        minDfa.endStates.add(i);
+                    }
+
+                    for (int j = 0; j < DFAStates[state].edgeNumber; j++) {
+                        for (int t = 0; t < StateNumber; t++) {
+                            if (s[t].contains(DFAStates[state].edges.get(j).trans)) {
+                                boolean haveEdge = false;
+                                for (int l = 0; l < DFAStates[i].edgeNumber; l++) {
+                                    if (DFAStates[i].edges.get(l).input == DFAStates[state].edges.get(j).input && DFAStates[i].edges.get(l).trans == t) {
+                                        haveEdge = true;
+                                    }
+                                }
+
+                                if (!haveEdge) {
+                                    DFAStates[i].edges.set(DFAStates[i].edgeNumber, new Edge(DFAStates[state].edges.get(j).input, t));
+                                    minDfa.trans[i][DFAStates[state].edges.get(j).input - 'a'] = t;
+                                    DFAStates[i].edgeNumber++;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return minDfa;
+    }
+
+    // 查找给定状态的划分集合号
+    public static int findSetNum(int totalStates, int state) {
+        for (int i = 0; i < totalStates; i++) {
+            if (s[i] != null && s[i].contains(state)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+}
+
+class DFAOutput {
+
+    public static void printMinDFATxt(DFA d) {
+        int i, j;
+
+        // 使用 FileWriter 替代 ofstream
+        try (FileWriter writer = new FileWriter("state.txt")) {
+            // 打印标题行
+            writer.write("      ");
+            for (char t : d.terminator) {
+                int num = t - 'a';  // 转换字符到数字
+                writer.write(num + "    ");
+            }
+            writer.write("\n");
+
+            // 打印每个状态的转换情况
+            for (i = 0; i < d.endStates.size(); i++) {  // 用 DFA 状态数量代替 StateNumber
+                if (d.endStates.contains(i)) {
+                    writer.write("*p" + i + "   ");
+                } else {
+                    writer.write(" p" + i + "   ");
+                }
+
+                // 遍历每个字符
+                for (j = 0; j < 26; j++) {  // 假设我们只处理 'a' 到 'z'
+                    char ch = (char) (j + 'a');
+                    if (d.terminator.contains(ch)) {  // 检查是否为有效的终结符
+                        if (d.trans[i][ch - 'a'] != -1) {
+                            writer.write("p" + d.trans[i][ch - 'a'] + "   ");
+                        } else {
+                            writer.write("N    ");
+                        }
+                    }
+                }
+
+                writer.write("\n");
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
 public class Main {
     public static void main(String[] args) {
         //输入处理
